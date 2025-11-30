@@ -402,7 +402,7 @@ def main():
         st.markdown("---")
         
         # API Key info
-        st.info("💡 Set API keys in .env file:\nOPENAI_API_KEY or\nANTHROPIC_API_KEY")
+        st.info("💡 Set API keys in .env file:\nOPENAI_API_KEY or\nANTHROPIC_API_KEY\n\n🌐 For domain checking:\nGODADDY_API_KEY\nGODADDY_API_SECRET\nGODADDY_USE_OTE=true\n\n🔍 For Google search:\nGOOGLE_API_KEY\nGOOGLE_SEARCH_ENGINE_ID")
     
     # Tabs for different sections
     tab1, tab2 = st.tabs(["🔮 GENERATE NAMES ", " 📊 EVALUATE NAMES "])
@@ -602,6 +602,35 @@ def main():
                                     st.markdown("**❌ WEAKNESSES:**")
                                     for weakness in eval_result.weaknesses:
                                         st.markdown(f"- {weakness}")
+                                
+                                # Domain Availability Section
+                                if eval_result.available_domains:
+                                    st.markdown("**🌐 AVAILABLE DOMAINS:**")
+                                    domain_cols = st.columns(min(5, len(eval_result.available_domains)))
+                                    for idx, domain in enumerate(eval_result.available_domains[:5]):
+                                        with domain_cols[idx % len(domain_cols)]:
+                                            st.markdown(f'<div style="background-color: #2A9D8F; color: #F1FAEE; padding: 8px; border: 2px solid #000; box-shadow: 3px 3px 0px 0px #000; font-family: Courier New, monospace; font-weight: bold; text-align: center;">{domain}</div>', unsafe_allow_html=True)
+                                
+                                if eval_result.domain_check_error:
+                                    st.warning(f"⚠️ Domain Check: {eval_result.domain_check_error}")
+                                
+                                # Google Search Insights Section
+                                if eval_result.search_insights:
+                                    st.markdown("**🔍 GOOGLE SEARCH INSIGHTS:**")
+                                    st.markdown(f'<div style="background-color: #A8DADC; color: #1D3557; padding: 12px; border: 3px solid #000; box-shadow: 4px 4px 0px 0px #000; font-family: Courier New, monospace; margin: 10px 0;">{eval_result.search_insights}</div>', unsafe_allow_html=True)
+                                    
+                                    if eval_result.competing_domains:
+                                        st.markdown("**Competing Domains Found:**")
+                                        domain_list = " | ".join([f"`{d}`" for d in eval_result.competing_domains[:8]])
+                                        st.markdown(domain_list)
+                                    
+                                    if eval_result.search_categories:
+                                        st.markdown("**Categories/Areas:**")
+                                        category_list = " | ".join([f"`{c}`" for c in eval_result.search_categories[:8]])
+                                        st.markdown(category_list)
+                                
+                                if eval_result.search_error:
+                                    st.warning(f"⚠️ Search Error: {eval_result.search_error}")
                                 
                                 # Recommendation
                                 st.markdown("**💡 RECOMMENDATION:**")

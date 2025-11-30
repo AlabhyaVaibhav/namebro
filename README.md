@@ -9,15 +9,17 @@
 - **🎨 Style Parameters**: Generate names in various styles (GenZ, abstract artistic, professional, etc.)
 - **✨ Name Variations**: Automatically generates creative variations of suggested names
 - **📊 Name Evaluation**: Comprehensive evaluation across 12 parameters (memorability, pronounceability, etc.)
+- **🌐 Domain Availability**: Real-time domain checking via GoDaddy Domains API with creative variations (get<name>.app, <name>app.ai, etc.)
+- **🔍 Google Search Insights**: Searches Google to find existing applications, competing domains, and market categories
 - **💬 Neo-Brutalist UI**: Beautiful, bold Streamlit interface with high-contrast design
 - **📚 Rulebook Integration**: Uses proven naming principles and evaluation frameworks
-- **🔧 Extensible**: Ready for custom tools (domain checking, trademark search, etc.)
+- **🔧 Extensible**: Ready for additional custom tools (trademark search, etc.)
 
 ## Installation
 
 ```bash
 # Clone or navigate to the project directory
-cd Namebro
+cd namebro
 
 # Install dependencies
 pip install -r requirements.txt
@@ -111,9 +113,21 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 # Anthropic API Key (for Claude)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# GoDaddy API Credentials (for domain availability checking)
+GODADDY_API_KEY=your_godaddy_api_key_here
+GODADDY_API_SECRET=your_godaddy_api_secret_here
+GODADDY_USE_OTE=true  # Set to false for production
+
+# Google Custom Search API (for competitive research)
+GOOGLE_API_KEY=your_google_api_key_here
+GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id_here
 ```
 
-**Note**: You only need one API key, depending on which LLM provider you want to use.
+**Note**: 
+- You only need one LLM API key (OpenAI or Anthropic), depending on which provider you want to use.
+- GoDaddy API credentials are optional but recommended for real-time domain availability checking.
+- Google Custom Search API is optional but recommended for competitive insights. Falls back to alternative search if not configured.
 
 ## Example
 
@@ -184,14 +198,86 @@ The agent is built with modern Python tools:
 - Comparative analysis across multiple names
 - Total score out of 120 points
 
+## Domain Availability Checking
+
+Namebro now includes **real-time domain availability checking** via the [GoDaddy Domains API](https://developer.godaddy.com/doc/endpoint/domains). When evaluating names, the system:
+
+1. **Generates Creative Domain Variations**: Automatically creates variations like:
+   - `name.com`, `name.io`, `name.app`, `name.ai`
+   - `getname.com`, `tryname.com`, `usename.com`
+   - `nameapp.com`, `nameai.com`, `namehub.com`
+   - `getnameapp.com`, `trynameai.com`, and more
+
+2. **Checks Availability**: Uses GoDaddy API to check which domains are actually available
+
+3. **Scores Domain Potential**: Calculates a domain availability score (1-10) based on:
+   - Number of available domains
+   - Quality of TLDs (prioritizes .com, .io, .app, .ai)
+   - Domain length (shorter is better)
+
+4. **Displays Results**: Shows top available domains in the evaluation results
+
+### Setting Up GoDaddy API
+
+1. Sign in to your GoDaddy account and go to [API Key Management](https://developer.godaddy.com/keys)
+2. Create a new API key (choose OTE for testing or Production for live use)
+3. Copy your API Key and Secret
+4. Add them to your `.env` file:
+   ```env
+   GODADDY_API_KEY=your_key_here
+   GODADDY_API_SECRET=your_secret_here
+   GODADDY_USE_OTE=true  # Use false for production
+   ```
+
+The domain checker works automatically when API credentials are configured. If not configured, the system will still evaluate names but use LLM-estimated domain availability scores.
+
+## Google Search Insights
+
+Namebro includes **Google search integration** to provide competitive insights when evaluating startup names. The system:
+
+1. **Searches for Existing Applications**: Queries Google for the startup name to find:
+   - Existing companies/applications with similar names
+   - Competing domains and websites
+   - Market categories and areas where the name is used
+
+2. **Analyzes Competition**: 
+   - Counts number of competing results
+   - Identifies domains using similar names
+   - Categorizes the competitive landscape (Software/App, AI/ML, E-commerce, etc.)
+
+3. **Updates Evaluation Scores**:
+   - Adjusts originality score based on competition level
+   - Adds competitive insights to strengths/weaknesses
+   - Includes search findings in recommendations
+
+4. **Displays Results**: Shows search insights, competing domains, and categories in evaluation results
+
+### Setting Up Google Custom Search API
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the "Custom Search API"
+4. Create credentials (API Key)
+5. Set up a Custom Search Engine at [Google Custom Search](https://cse.google.com/cse/all)
+   - Choose "Search the entire web"
+   - Copy your Search Engine ID
+6. Add to your `.env` file:
+   ```env
+   GOOGLE_API_KEY=your_api_key_here
+   GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id_here
+   ```
+
+**Note**: Google Custom Search API provides 100 free queries per day. The system will use a fallback search method if the API is not configured, though results may be less comprehensive.
+
 ## Future Enhancements
 
 - ✅ LLM integration for intelligent name generation
 - ✅ Name evaluation framework
 - ✅ Neo-brutalist UI design
 - ✅ Rulebook integration
-- 🔄 Domain availability checking (tool integration ready)
-- 🔄 Trademark search integration (tool integration ready)
+- ✅ Domain availability checking with GoDaddy API
+- ✅ Google search insights for competitive analysis
+- 🔄 Trademark search integration
 - 🔄 Social media handle availability
 - 🔄 Multi-language support
 - 🔄 Batch processing for multiple startups

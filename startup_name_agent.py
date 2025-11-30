@@ -18,6 +18,22 @@ from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, H
 from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 
+# Import domain checker
+try:
+    from domain_checker import DomainChecker
+    DOMAIN_CHECKER_AVAILABLE = True
+except ImportError:
+    DOMAIN_CHECKER_AVAILABLE = False
+    DomainChecker = None
+
+# Import Google search
+try:
+    from google_search import GoogleSearcher
+    GOOGLE_SEARCH_AVAILABLE = True
+except ImportError:
+    GOOGLE_SEARCH_AVAILABLE = False
+    GoogleSearcher = None
+
 # Load environment variables
 load_dotenv()
 
@@ -66,6 +82,12 @@ class NameEvaluation(BaseModel):
     strengths: List[str] = Field(default_factory=list, description="List of key strengths")
     weaknesses: List[str] = Field(default_factory=list, description="List of key weaknesses")
     recommendation: str = Field(default="", description="Overall recommendation and reasoning")
+    available_domains: List[str] = Field(default_factory=list, description="List of available domain variations")
+    domain_check_error: Optional[str] = Field(default=None, description="Error message if domain check failed")
+    search_insights: Optional[str] = Field(default=None, description="Google search insights summary")
+    competing_domains: List[str] = Field(default_factory=list, description="List of competing domains found in search")
+    search_categories: List[str] = Field(default_factory=list, description="Categories/areas found in search results")
+    search_error: Optional[str] = Field(default=None, description="Error message if search failed")
 
 
 class NameEvaluationsResponse(BaseModel):
@@ -82,7 +104,8 @@ class StartupNameAgent:
     def __init__(self, 
                  llm_provider: str = "openai",
                  model_name: Optional[str] = None,
-                 temperature: float = 0.9):
+                 temperature: float = 0.9,
+                 enable_domain_check: bool = True):
         """
         Initialize the agent.
         
@@ -90,10 +113,32 @@ class StartupNameAgent:
             llm_provider: "openai" or "anthropic"
             model_name: Specific model name (e.g., "gpt-4", "claude-3-opus-20240229")
             temperature: Temperature for LLM generation (0.0-1.0)
+            enable_domain_check: Enable domain availability checking via GoDaddy API
         """
         self.context: Optional[str] = None
         self.style_params: List[NameStyle] = []
         self.temperature = temperature
+        self.enable_domain_check = enable_domain_check and DOMAIN_CHECKER_AVAILABLE
+        self.enable_google_search = True  # Enable by default
+        
+        # Initialize domain checker if available
+        self.domain_checker = None
+        if self.enable_domain_check:
+            try:
+                use_ote = os.getenv("GODADDY_USE_OTE", "true").lower() == "true"
+                self.domain_checker = DomainChecker(use_ote=use_ote)
+            except Exception as e:
+                print(f"Warning: Could not initialize domain checker: {e}")
+                self.enable_domain_check = False
+        
+        # Initialize Google searcher if available
+        self.google_searcher = None
+        if self.enable_google_search and GOOGLE_SEARCH_AVAILABLE:
+            try:
+                self.google_searcher = GoogleSearcher()
+            except Exception as e:
+                print(f"Warning: Could not initialize Google searcher: {e}")
+                self.enable_google_search = False
         
         # Initialize LLM
         if llm_provider.lower() == "openai":
@@ -423,6 +468,130 @@ Focus on creativity, memorability, and alignment with the style preferences.
         # Generate names
         return self.generate_names(num_suggestions)
     
+    def _enhance_with_domain_data(self, evaluations: List[NameEvaluation]) -> List[NameEvaluation]:
+        """
+        Enhance evaluations with real domain availability data from GoDaddy API.
+        
+        Args:
+            evaluations: List of NameEvaluation objects
+            
+        Returns:
+            Updated evaluations with domain availability data
+        """
+        if not self.domain_checker:
+            return evaluations
+        
+        for evaluation in evaluations:
+            try:
+                # Get domain availability score and available domains
+                domain_score, available_domains = self.domain_checker.calculate_domain_availability_score(
+                    evaluation.name
+                )
+                
+                # Update domain availability score (use real data if available)
+                if domain_score > 0:
+                    evaluation.domain_availability = domain_score
+                    evaluation.available_domains = available_domains
+                    
+                    # Update strengths/weaknesses based on domain availability
+                    if available_domains:
+                        domain_strength = f"Available domains: {', '.join(available_domains[:3])}"
+                        if domain_strength not in evaluation.strengths:
+                            evaluation.strengths.append(domain_strength)
+                    else:
+                        domain_weakness = "No available domain variations found"
+                        if domain_weakness not in evaluation.weaknesses:
+                            evaluation.weaknesses.append(domain_weakness)
+                    
+                    # Recalculate total score with updated domain_availability
+                    evaluation.total_score = (
+                        evaluation.memorability + evaluation.pronounceability +
+                        evaluation.spelling_simplicity + evaluation.meaning_associations +
+                        evaluation.phonetic_appeal + evaluation.originality +
+                        evaluation.category_fit + evaluation.domain_availability +
+                        evaluation.global_safety + evaluation.visual_identity +
+                        evaluation.longevity + evaluation.emotional_resonance
+                    )
+                else:
+                    evaluation.domain_check_error = "Domain check returned no results"
+                    
+            except Exception as e:
+                evaluation.domain_check_error = f"Domain check failed: {str(e)}"
+                # Keep the LLM-generated domain_availability score if domain check fails
+        
+        return evaluations
+    
+    def _enhance_with_search_data(self, evaluations: List[NameEvaluation]) -> List[NameEvaluation]:
+        """
+        Enhance evaluations with Google search insights.
+        
+        Args:
+            evaluations: List of NameEvaluation objects
+            
+        Returns:
+            Updated evaluations with search insights
+        """
+        if not self.google_searcher:
+            return evaluations
+        
+        for evaluation in evaluations:
+            try:
+                # Search for the startup name
+                search_insights = self.google_searcher.search_startup_name(evaluation.name)
+                
+                # Update evaluation with search data
+                evaluation.search_insights = search_insights.summary
+                evaluation.competing_domains = search_insights.domains_found[:10]
+                evaluation.search_categories = search_insights.categories[:10]
+                
+                if search_insights.error:
+                    evaluation.search_error = search_insights.error
+                
+                # Update originality score based on search results
+                # If many competing results found, reduce originality score
+                if search_insights.results:
+                    num_competitors = len(search_insights.results)
+                    if num_competitors > 10:
+                        # Many competitors found - reduce originality
+                        evaluation.originality = max(1, evaluation.originality - 2)
+                        if "High competition" not in evaluation.weaknesses:
+                            evaluation.weaknesses.append(f"High competition: {num_competitors} existing results found")
+                    elif num_competitors > 5:
+                        # Moderate competition
+                        evaluation.originality = max(1, evaluation.originality - 1)
+                        if "Some competition" not in evaluation.weaknesses:
+                            evaluation.weaknesses.append(f"Some competition: {num_competitors} existing results found")
+                    else:
+                        # Low competition - good sign
+                        if "Low competition" not in evaluation.strengths:
+                            evaluation.strengths.append(f"Low competition: Only {num_competitors} existing results")
+                    
+                    # Add search insights to recommendation
+                    if search_insights.domains_found:
+                        domain_info = f"Competing domains: {', '.join(search_insights.domains_found[:3])}"
+                        if domain_info not in evaluation.recommendation:
+                            evaluation.recommendation += f" {domain_info}."
+                else:
+                    # No results found - good for originality
+                    if "No existing competitors found" not in evaluation.strengths:
+                        evaluation.strengths.append("No existing competitors found in search")
+                
+                # Recalculate total score with updated originality
+                evaluation.total_score = (
+                    evaluation.memorability + evaluation.pronounceability +
+                    evaluation.spelling_simplicity + evaluation.meaning_associations +
+                    evaluation.phonetic_appeal + evaluation.originality +
+                    evaluation.category_fit + evaluation.domain_availability +
+                    evaluation.global_safety + evaluation.visual_identity +
+                    evaluation.longevity + evaluation.emotional_resonance
+                )
+                
+            except Exception as e:
+                evaluation.search_error = f"Search failed: {str(e)}"
+                # Keep the LLM-generated scores if search fails
+        
+        return evaluations
+    
     def evaluate_names(self, names: List[str], startup_context: Optional[str] = None) -> List[NameEvaluation]:
         """
         Evaluate a list of startup names using the evaluation framework.
@@ -612,6 +781,14 @@ Return as JSON with evaluations array.
                 # Ensure recommendation exists
                 if not evaluation.recommendation:
                     evaluation.recommendation = f"Overall score: {evaluation.total_score}/120. Consider this name based on your specific startup context and requirements."
+            
+            # Enhance evaluations with real domain availability data
+            if self.enable_domain_check and self.domain_checker:
+                evaluations = self._enhance_with_domain_data(evaluations)
+            
+            # Enhance evaluations with Google search insights
+            if self.enable_google_search and self.google_searcher:
+                evaluations = self._enhance_with_search_data(evaluations)
             
             return evaluations
             
